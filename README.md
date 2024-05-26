@@ -43,7 +43,7 @@ echo brit >> ../paths.txt
 # create some route table
 echo 'intel.com 1' > ../routes.txt
 
-cp dnsnatproxy.service /etc/systemd/system/
+cp setup/dnsnatproxy.service /etc/systemd/system/
 systemctl start dnsnatproxy
 systemctl enable dnsnatproxy
 ```
