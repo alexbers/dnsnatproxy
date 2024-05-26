@@ -1,0 +1,7 @@
+ipaddress
+dnslib
+aiodns
+aiohttp
+aiofiles
+python-iptables
+requests
