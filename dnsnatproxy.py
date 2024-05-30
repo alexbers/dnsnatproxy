@@ -15,8 +15,8 @@ from aiohttp import web
 # We use ips 100.64.0.0 - 100.127.255.255
 
 THIS_HOST_VPN_IP = "10.163.0.1"
-DNS_CACHE_EXPIRATION = 60
-DNS_CACHE_CAPACITY = 10_000
+DNS_CACHE_EXPIRATION = 2*60
+DNS_CACHE_CAPACITY = 100_000
 
 
 def iter_subdomains(domain):
@@ -57,6 +57,7 @@ class FwdStrategyMgr:
         try:
             open('routes.txt', mode='a+').close()
             with open('routes.txt', mode='r') as f:
+                FwdStrategyMgr.clt_to_name_to_strategy = collections.defaultdict(dict)
                 for line in map(str.strip, f):
                     fields = line.split()
                     if len(fields) != 2:
@@ -186,11 +187,13 @@ class NATMgr:
 class IpAllocator:
     MAX_CAPACITY = 10000
     LEASE_EXPIRATION_SEC = 600
+    ERROR_IP = "127.127.127.127"
 
     def __init__(self, client_ip):
         self.mapping = collections.OrderedDict()
         self.backmapping = {}
         self.client_ip = client_ip
+        self.allocs = 0
 
     def allocate(self, name, real_ip, strategy):
         t = time.time()
@@ -215,18 +218,15 @@ class IpAllocator:
 
         if t - tt > self.LEASE_EXPIRATION_SEC:
             del self.backmapping[oldname]
+            del self.mapping[oldip]
             NATMgr.del_nat_rule(self.client_ip, oldip, oldrealip, oldname)
-            self.mapping[oldip] = (t, name, real_ip)
-            self.mapping.move_to_end(oldip)
-            self.backmapping[name] = oldip
-            NATMgr.add_nat_rule(self.client_ip, oldip, real_ip, name)
-            return oldip
-
-        self.mapping[oldip] = (tt, oldname, oldrealip)
-        self.mapping.move_to_end(oldip, last=False)
+        else:
+            # put back
+            self.mapping[oldip] = (tt, oldname, oldrealip)
+            self.mapping.move_to_end(oldip, last=False)
 
         if len(self.mapping) >= self.MAX_CAPACITY:
-            return "127.127.127.127"
+            return self.ERROR_IP
 
         ip = self.allocate_next_ip(strategy)
         self.mapping[ip] = (t, name, real_ip)
@@ -261,9 +261,21 @@ class IpAllocator:
 
 
     def allocate_next_ip(self, strategy):
-        l = len(self.mapping) + 1
-        START_IDX = 63
-        return f"100.{START_IDX+strategy}.{l//256}.{l%256}"
+        print("allocate_next_ip", strategy)
+        if len(self.mapping) >= self.MAX_CAPACITY:
+            return self.ERROR_IP
+
+        for i in range(self.MAX_CAPACITY):
+            self.allocs += 1
+            if self.allocs > self.MAX_CAPACITY:
+                self.allocs = 1
+
+            START_IDX = 63
+            ip = f"100.{START_IDX+strategy}.{self.allocs//256}.{self.allocs%256}"
+
+            if ip not in self.mapping:
+                return ip
+        return self.ERROR_IP
 
 
 class MulticlientIpAllocator:
@@ -366,8 +378,8 @@ class DNSServerProtocol:
                 dnslib.DNSHeader(id=dns_req.header.id, qr=1,aa=1,ra=1), q=dns_req.questions[0])
 
         ip = None
+        resolved_ip = None
         if qtype == "A":
-            resolved_ip = None
             if not dnscache.expired(simple_qname):
                 resolved_ip = dnscache.get(simple_qname)
                 print(f"using cached {simple_qname}->{resolved_ip}")
@@ -429,8 +441,22 @@ def reload_routes():
         traceback.print_exc()
 
 
+def print_debug():
+    
+    try:
+        for clt in clt_ip_allocation.clt_to_allocator:
+            allocator = clt_ip_allocation.clt_to_allocator[clt]
+            
+            print("clt", clt, "mapping", allocator.mapping)
+            print("clt", clt, "backmapping", allocator.backmapping)
+            
+    except Exception as E:
+        traceback.print_exc()
+    
+
 def setup_signals():
         signal.signal(signal.SIGHUP, lambda signum, frame: reload_routes())
+        signal.signal(signal.SIGUSR1, lambda signum, frame: print_debug())
 
 
 async def main():
