@@ -15,7 +15,8 @@ from aiohttp import web
 # We use ips 100.64.0.0 - 100.127.255.255
 
 THIS_HOST_VPN_IP = "10.163.0.1"
-DNS_CACHE_EXPIRATION = 2*60
+DNS_CACHE_MIN_EXPIRATION = 5
+DNS_CACHE_MAX_EXPIRATION = 10*60
 DNS_CACHE_CAPACITY = 100_000
 
 
@@ -310,37 +311,42 @@ clt_ip_allocation = MulticlientIpAllocator()
 
 
 class ExpirableCache:
-    def __init__(self, ttl=60, capacity=10_000):
+    def __init__(self, min_ttl, max_ttl, capacity):
         self.mapping = collections.OrderedDict()
-        self.ttl = ttl
+        self.max_ttl = max_ttl
+        self.min_ttl = min_ttl
         self.capacity = capacity
 
     def get(self, name):
         if name not in self.mapping:
             return None
 
-        t, ip = self.mapping[name]
+        t_exp, ip = self.mapping[name]
         return ip
 
-    def put(self, name, ip):
-        t = time.time()
+    def put(self, name, ip, ttl=0):
+        ttl = max(ttl, self.min_ttl)
+        ttl = min(ttl, self.max_ttl)
 
-        self.mapping[name] = (t, ip)
+        t_exp = time.time() + ttl
+
+        self.mapping[name] = (t_exp, ip)
         self.mapping.move_to_end(name)
 
         if len(self.mapping) > self.capacity:
             self.mapping.popitem(last=False)
 
 
-    def expired(self, name):
+    def ttl_left(self, name):
         if name not in self.mapping:
-            return True
+            return 0
 
-        t, ip = self.mapping[name]
-        return time.time() - t > self.ttl
+        t_exp, ip = self.mapping[name]
+        return max(0, t_exp - time.time())
 
 
-dnscache = ExpirableCache(ttl=DNS_CACHE_EXPIRATION, capacity=DNS_CACHE_CAPACITY)
+dnscache = ExpirableCache(min_ttl=DNS_CACHE_MIN_EXPIRATION,
+                          max_ttl=DNS_CACHE_MAX_EXPIRATION, capacity=DNS_CACHE_CAPACITY)
 
 
 class DNSServerProtocol:
@@ -380,18 +386,20 @@ class DNSServerProtocol:
         ip = None
         resolved_ip = None
         if qtype == "A":
-            if not dnscache.expired(simple_qname):
+            cache_ttl_left = int(dnscache.ttl_left(simple_qname))
+            if cache_ttl_left > 0:
                 resolved_ip = dnscache.get(simple_qname)
-                print(f"using cached {simple_qname}->{resolved_ip}")
+                print(f"using cached {simple_qname}->{resolved_ip}, left {cache_ttl_left}")
             elif simple_qname == "vpn.vpn":
                 resolved_ip = THIS_HOST_VPN_IP
             else:
                 try:
                     resp = await self.resolver.query(qname.encode("idna"), 'A')
-                    resolved_ip = random.choice(resp).host
-                    print(f"resolved {simple_qname}->{resolved_ip}")
+                    rand_resp = random.choice(resp)
+                    resolved_ip = rand_resp.host
+                    print(f"resolved {simple_qname}->{resolved_ip} ttl {rand_resp.ttl}")
 
-                    dnscache.put(simple_qname, resolved_ip)
+                    dnscache.put(simple_qname, resolved_ip, ttl=rand_resp.ttl)
                 except aiodns.error.DNSError as E:
                     print(E)
                     resolved_ip = dnscache.get(simple_qname)
@@ -406,7 +414,7 @@ class DNSServerProtocol:
                 print(f"faking {simple_qname}->{ip} strategy {strategy}")
 
             if ip:
-                ans.add_answer(dnslib.RR(qname,rdata=dnslib.A(ip)))
+                ans.add_answer(dnslib.RR(qname,rdata=dnslib.A(ip), ttl=cache_ttl_left))
 
         print("resp", addr, len(dns_req.questions), qtype, qname, "ans", ip)
         self.transport.sendto(ans.pack(), addr)
