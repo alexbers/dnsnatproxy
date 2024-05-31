@@ -380,8 +380,10 @@ class DNSServerProtocol:
             await FwdStrategyMgr.record_new_strategy(clt_ip, first_components, out_idx)
             simple_qname = "vpn.vpn"
 
+        NOT_IMPL = 4
         ans = dnslib.DNSRecord(
-                dnslib.DNSHeader(id=dns_req.header.id, qr=1,aa=1,ra=1), q=dns_req.questions[0])
+                dnslib.DNSHeader(id=dns_req.header.id, qr=1, aa=1,
+                                 ra=1, rcode=NOT_IMPL), q=dns_req.questions[0])
 
         ip = None
         resolved_ip = None
@@ -405,6 +407,12 @@ class DNSServerProtocol:
                     resolved_ip = dnscache.get(simple_qname)
                     if resolved_ip:
                         print(f"returning expired cached {simple_qname}->{resolved_ip}")
+                    else:
+                        NAME_ERROR = 3
+                        ans = dnslib.DNSRecord(
+                                dnslib.DNSHeader(id=dns_req.header.id, qr=1, aa=1,
+                                                 ra=1, rcode=NAME_ERROR), q=dns_req.questions[0])
+
 
             ip = resolved_ip
 
@@ -414,9 +422,16 @@ class DNSServerProtocol:
                 print(f"faking {simple_qname}->{ip} strategy {strategy}")
 
             if ip:
+                ans = dnslib.DNSRecord(
+                        dnslib.DNSHeader(id=dns_req.header.id, qr=1, aa=1,
+                                         ra=1), q=dns_req.questions[0])
+
                 ans.add_answer(dnslib.RR(qname,rdata=dnslib.A(ip), ttl=cache_ttl_left))
 
         print("resp", addr, len(dns_req.questions), qtype, qname, "ans", ip)
+
+
+
         self.transport.sendto(ans.pack(), addr)
 
 
