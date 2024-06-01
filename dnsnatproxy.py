@@ -219,7 +219,6 @@ class IpAllocator:
 
         if t - tt > self.LEASE_EXPIRATION_SEC:
             del self.backmapping[oldname]
-            del self.mapping[oldip]
             NATMgr.del_nat_rule(self.client_ip, oldip, oldrealip, oldname)
         else:
             # put back
