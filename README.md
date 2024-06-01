@@ -37,11 +37,11 @@ cd ..
 
 # give name for your paths
 
-echo ams > ../paths.txt
-echo brit >> ../paths.txt
+echo ams > paths.txt
+echo brit >> paths.txt
 
 # create some route table
-echo 'intel.com 1' > ../routes.txt
+echo 'intel.com 1' > routes.txt
 
 cp setup/dnsnatproxy.service /etc/systemd/system/
 systemctl start dnsnatproxy

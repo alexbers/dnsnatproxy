@@ -8,6 +8,7 @@ Restart=always
 RestartSec=1
 WorkingDirectory=/root/dnsnatproxy
 ExecStart=/usr/bin/python3 -u /root/dnsnatproxy/dnsnatproxy.py
+ExecReload=kill -HUP $MAINPID
 
 [Install]
 WantedBy=multi-user.target
