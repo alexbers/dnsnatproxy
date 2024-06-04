@@ -15,7 +15,8 @@ The client can modify its route table, for example if the server has "ams" path,
 ```bash
 apt install python3-pip wireguard
 
-git clone ...
+cd /root
+git clone https://github.com/alexbers/dnsnatproxy
 cd dnsnatproxy
 pip install -r requirements.txt --break-system-packages
 
@@ -56,7 +57,7 @@ systemctl enable dnsnatproxy
 ## Automate Updating
 
 ```bash
-cd dnsnatproxy
+cd /root/dnsnatproxy
 cp setup/create_routes.py .
 
 # modify create_routes.py to fit your needs
