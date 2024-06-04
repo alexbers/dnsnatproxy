@@ -2,8 +2,13 @@
 
 The implementation of name-based routing.
 
-The custom DNS server allocates IPs in its private network (behind VPN) for some names and setup NAT to make them available by the client by this ip. It is coupled with Wireguard VPN to be able to route these IPs.
+It is implemented using custom DNS server inside WireGuard VPN. The network 100.64.0.0/12 is inside the vpn.
 
+If a client asks for the name that not in name-based route table, the real IP is returned and the client don't uses VPN to reach that name.
+
+If a client asks for the name that are in route table, the address from network 100.64.0.0/12 is returned to him and this address NAT'ed to the real name using some outgoing path. For example "ams" path can lead to Amsterdam, and "brit" path - to Britain. Every path is just a tunnel, a pair of WireGuard configs.
+
+The client can modify its route table, for example if the server has "ams" path, if client resolves alexbers.com.ams, all requests on alexbers.com and all its subdomains will be routed to "ams" path. To see your routing table, visit http://vpn.vpn special address from the VPN.
 
 ## Installing
 
@@ -46,4 +51,17 @@ echo 'intel.com 1' > routes.txt
 cp setup/dnsnatproxy.service /etc/systemd/system/
 systemctl start dnsnatproxy
 systemctl enable dnsnatproxy
+```
+
+## Automate Updating
+
+```bash
+cd dnsnatproxy
+cp setup/create_routes.py .
+
+# modify create_routes.py to fit your needs
+
+cp setup/dnsnatproxy-updater.service /etc/systemd/system/
+systemctl start dnsnatproxy-updater
+systemctl enable dnsnatproxy-updater
 ```
