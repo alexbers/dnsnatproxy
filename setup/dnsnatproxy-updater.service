@@ -1,0 +1,13 @@
+[Unit]
+Description=Dns NAT proxy updater
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+WorkingDirectory=/root/dnsnatproxy
+ExecStart=/bin/bash -c 'while true; do sleep 12h; python3 /root/dnsnatproxy/create_routes.py && systemctl reload dnsnatproxy; done'
+
+[Install]
+WantedBy=multi-user.target
