@@ -8,7 +8,7 @@ If a client asks for the name that not in name-based route table, the real IP is
 
 If a client asks for the name that are in route table, the address from network 100.64.0.0/12 is returned to him and this address NAT'ed to the real name using some outgoing path. For example "ams" path can lead to Amsterdam, and "brit" path - to Britain. Every path is just a tunnel, a pair of WireGuard configs.
 
-The client can modify its route table, for example if the server has "ams" path, if client resolves alexbers.com.ams, all requests on alexbers.com and all its subdomains will be routed to "ams" path. To see your routing table, visit http://vpn.vpn special address from the VPN.
+The client can modify its route table, for example if the server has "ams" path, if client resolves alexbers.com.ams, all requests on alexbers.com and all its subdomains will be routed to "ams" path. To see your routing table, visit http://vpn.vpn special address from the VPN. To remove route, add suffix ".default" to it. To modify default route, use name "default", for example "default.ams" will direct traffic to "ams" path by default.
 
 ## Installing
 

@@ -37,7 +37,7 @@ class FwdStrategyMgr:
             await f.write(f"{clt_ip} {name} {strategy}\n")
 
         FwdStrategyMgr.clt_to_name_to_strategy[clt_ip][name] = strategy
-        if strategy == 0:
+        if strategy < 0:
             del FwdStrategyMgr.clt_to_name_to_strategy[clt_ip][name]
 
 
@@ -73,7 +73,7 @@ class FwdStrategyMgr:
                         continue
 
                     FwdStrategyMgr.clt_to_name_to_strategy["all"][name] = strategy
-                    if strategy == 0:
+                    if strategy < 0:
                         del FwdStrategyMgr.clt_to_name_to_strategy["all"][name]
 
             open('user_routes.txt', mode='a+').close()
@@ -92,7 +92,7 @@ class FwdStrategyMgr:
                         continue
 
                     FwdStrategyMgr.clt_to_name_to_strategy[clt_ip][name] = strategy
-                    if strategy == 0:
+                    if strategy < 0:
                         del FwdStrategyMgr.clt_to_name_to_strategy[clt_ip][name]
 
             r = sum(len(v) for v in FwdStrategyMgr.clt_to_name_to_strategy.values())
@@ -119,13 +119,21 @@ class FwdStrategyMgr:
             if subdomain in name_to_strategy:
                 return name_to_strategy[subdomain]
 
+        if real_ip in name_to_strategy:
+            return name_to_strategy[real_ip]
+
+        if "default" in name_to_strategy:
+            return name_to_strategy["default"]
+
         all_name_to_strategy = FwdStrategyMgr.clt_to_name_to_strategy.get("all", {})
         for subdomain in iter_subdomains(name):
             if subdomain in all_name_to_strategy:
                 return all_name_to_strategy[subdomain]
 
-        # last resort: try to resolve real ip as a name
-        return all_name_to_strategy.get(real_ip, 0)
+        if real_ip in all_name_to_strategy:
+            return all_name_to_strategy[real_ip]
+
+        return all_name_to_strategy.get("default", 0)
 
 
 class NATMgr:
@@ -372,8 +380,11 @@ class DNSServerProtocol:
         clt_ip = addr[0]
 
         last_component = simple_qname.rsplit(".", 1)[-1]
-        if last_component in FwdStrategyMgr.out_paths:
-            out_idx = FwdStrategyMgr.out_paths.index(last_component)
+        if last_component in FwdStrategyMgr.out_paths or last_component == "default":
+            out_idx = -1
+            if last_component in FwdStrategyMgr.out_paths:
+                out_idx = FwdStrategyMgr.out_paths.index(last_component)
+
             first_components = simple_qname.removesuffix(last_component).rstrip(".")
             clt_ip_allocation.deallocate(clt_ip, first_components)
             await FwdStrategyMgr.record_new_strategy(clt_ip, first_components, out_idx)
