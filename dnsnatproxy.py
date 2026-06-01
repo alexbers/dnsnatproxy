@@ -1,7 +1,6 @@
 import asyncio
 import traceback
 import collections
-import random
 import time
 import os
 import signal
@@ -407,11 +406,23 @@ class DNSServerProtocol:
             else:
                 try:
                     resp = await self.resolver.query(qname.encode("idna"), 'A')
-                    rand_resp = random.choice(resp)
-                    resolved_ip = rand_resp.host
-                    print(f"resolved {simple_qname}->{resolved_ip} ttl {rand_resp.ttl}")
 
-                    dnscache.put(simple_qname, resolved_ip, ttl=rand_resp.ttl)
+                    chosen = None
+                    if resp:
+                        chosen = resp[0]
+                        prev_ip = dnscache.get(simple_qname)
+                        if prev_ip:
+                            for r in resp[1::]:
+                                if r.host == prev_ip:
+                                    chosen = r
+                                    break
+
+                    if chosen is None:
+                        raise aiodns.error.DNSError(f"no A records to choose from for {simple_qname}")
+                    resolved_ip = chosen.host
+                    print(f"resolved {simple_qname}->{resolved_ip} ttl {chosen.ttl}")
+
+                    dnscache.put(simple_qname, resolved_ip, ttl=chosen.ttl)
                 except aiodns.error.DNSError as E:
                     print(E)
                     resolved_ip = dnscache.get(simple_qname)
@@ -450,25 +461,25 @@ class DNSServerProtocol:
             if not has_a_record:
                 try:
                     resp = await self.resolver.query(qname.encode("idna"), 'A')
-                    has_a_record = True
-                    rand_resp = random.choice(resp)
-                    dnscache.put(simple_qname, rand_resp.host, ttl=rand_resp.ttl)
+                    first = resp[0] if resp else None
+                    if first is not None:
+                        has_a_record = True
+                        dnscache.put(simple_qname, first.host, ttl=first.ttl)
                 except aiodns.error.DNSError:
                     pass
 
             if not has_a_record:
                 try:
                     resp = await self.resolver.query(qname.encode("idna"), 'AAAA')
-                    rand_resp = random.choice(resp)
-                    ip = rand_resp.host
-                    print(f"resolved AAAA {simple_qname}->{ip} ttl {rand_resp.ttl}")
-                    ans.add_answer(dnslib.RR(qname, rtype=dnslib.QTYPE.AAAA, rdata=dnslib.AAAA(ip), ttl=rand_resp.ttl))
+                    first = resp[0] if resp else None
+                    if first is not None:
+                        ip = first.host
+                        print(f"resolved AAAA {simple_qname}->{ip} ttl {first.ttl}")
+                        ans.add_answer(dnslib.RR(qname, rtype=dnslib.QTYPE.AAAA, rdata=dnslib.AAAA(ip), ttl=first.ttl))
                 except aiodns.error.DNSError as E:
                     print(E)
 
         print("resp", addr, len(dns_req.questions), qtype, qname, "ans", ip)
-
-
 
         self.transport.sendto(ans.pack(), addr)
 
