@@ -12,7 +12,7 @@ import aiodns
 import aiofiles
 from aiohttp import web
 
-# We use ips 100.64.0.0 - 100.127.255.255
+# We use ips 11.0.0.0 - 11.63.255.255
 
 THIS_HOST_VPN_IP = "10.163.0.1"
 DNS_CACHE_MIN_EXPIRATION = 5
@@ -278,8 +278,8 @@ class IpAllocator:
             if self.allocs > self.MAX_CAPACITY:
                 self.allocs = 1
 
-            START_IDX = 63
-            ip = f"100.{START_IDX+strategy}.{self.allocs//256}.{self.allocs%256}"
+            START_IDX = 0
+            ip = f"11.{START_IDX+strategy}.{self.allocs//256}.{self.allocs%256}"
 
             if ip not in self.mapping:
                 return ip
@@ -437,6 +437,34 @@ class DNSServerProtocol:
                                          ra=1), q=dns_req.questions[0])
 
                 ans.add_answer(dnslib.RR(qname,rdata=dnslib.A(ip), ttl=cache_ttl_left))
+
+        elif qtype == "AAAA":
+            # RFC 4074: answer AAAA queries with RCODE 0 and an empty answer
+            # section when we have no AAAA to hand back, rather than NOTIMPL.
+            ans = dnslib.DNSRecord(
+                    dnslib.DNSHeader(id=dns_req.header.id, qr=1, aa=1,
+                                     ra=1), q=dns_req.questions[0])
+
+            # Return real AAAA only if the domain has no A record at all
+            has_a_record = dnscache.get(simple_qname) is not None
+            if not has_a_record:
+                try:
+                    resp = await self.resolver.query(qname.encode("idna"), 'A')
+                    has_a_record = True
+                    rand_resp = random.choice(resp)
+                    dnscache.put(simple_qname, rand_resp.host, ttl=rand_resp.ttl)
+                except aiodns.error.DNSError:
+                    pass
+
+            if not has_a_record:
+                try:
+                    resp = await self.resolver.query(qname.encode("idna"), 'AAAA')
+                    rand_resp = random.choice(resp)
+                    ip = rand_resp.host
+                    print(f"resolved AAAA {simple_qname}->{ip} ttl {rand_resp.ttl}")
+                    ans.add_answer(dnslib.RR(qname, rtype=dnslib.QTYPE.AAAA, rdata=dnslib.AAAA(ip), ttl=rand_resp.ttl))
+                except aiodns.error.DNSError as E:
+                    print(E)
 
         print("resp", addr, len(dns_req.questions), qtype, qname, "ans", ip)
 
